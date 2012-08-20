@@ -1,0 +1,10 @@
+%% -*- mode: erlang -*-
+-module(ereturn_fail).
+
+-export([bad_fun/0]).
+
+-compile([{parse_transform, ereturn}]).
+-import(erlang, [return/1]).
+
+bad_fun() ->
+    io:format("this is a test\n", [return(ok)]).
