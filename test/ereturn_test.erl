@@ -8,7 +8,7 @@ return_test_() ->
      [[[?_test(do_test({fun(F) -> TestFun(P, F) end, S, R}))
         || {P, S, R} <- ParamStatesList]
        || {TestFun, ParamStatesList} <- M:tests()]
-      || M <- [simple, case_true, case_maybe, case_false, if_maybe, fun_simple]]
+      || M <- [simple, case_true, case_maybe, case_false, if_maybe, fun_simple, match_simple]]
     }.
 
 

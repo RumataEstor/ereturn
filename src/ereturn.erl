@@ -66,8 +66,13 @@ clause({clause, L, Params, Guards, Expressions}, State) ->
 expr([], State, Acc) ->
     {Acc, State};
 
-expr(Next, #state{return=true}, Acc) ->
-    exit({"process expressions after return", Next, Acc});
+expr(_Next, #state{return=true} = State, Acc) ->
+    {Acc, State};
+
+expr(Next, #state{return=maybe} = State, Acc) ->
+    {After, AfterState} = expr(Next, clean(State), []),
+    NewAcc = apply_after_expressions(Acc, fun(Last) -> After ++ [Last] end),
+    expr([], combine(State#state{return=maybe}, AfterState), NewAcc);
 
 expr([{call, L, Fn, Parameters} = Form | Next], State, Acc) ->
     ?DEBUG("call ~p, state ~p\n", [Form, State]),
@@ -94,20 +99,26 @@ expr([{call, L, Fn, Parameters} = Form | Next], State, Acc) ->
 
 expr([{'case', L, Expression, Clauses} | Next], State, Acc) ->
     check_no_return([Expression], State),
-    {NewNext, NewState, NewClauses} = control_clauses(State, Clauses, Next),
-    expr(NewNext, NewState, [{'case', L, Expression, NewClauses} | Acc]);
+    {NewState, NewClauses} = control_clauses(State, Clauses),
+    expr(Next, NewState, [{'case', L, Expression, NewClauses} | Acc]);
 
 expr([{'if', L, Clauses} | Next], State, Acc) ->
-    {NewNext, NewState, NewClauses} = control_clauses(State, Clauses, Next),
-    expr(NewNext, NewState, [{'if', L, NewClauses} | Acc]);
+    {NewState, NewClauses} = control_clauses(State, Clauses),
+    expr(Next, NewState, [{'if', L, NewClauses} | Acc]);
 
 expr([{match, L, LValue, RValue} | Next], State, Acc) ->
-    %%
-    %% TODO
-    %%
     {[NewLValue], _} = check_no_return([LValue], State),
-    {[NewRValue], _} = check_no_return([RValue], State),
-    expr(Next, State, [{match, L, NewLValue, NewRValue} | Acc]);
+    case expr([RValue], State, []) of
+        {[NewRValue], #state{return=false}} ->
+            expr(Next, State, [{match, L, NewLValue, NewRValue} | Acc]);
+        {[NewRValue], #state{return=true} = NewState} ->
+            expr([], NewState, [NewRValue | Acc]);
+        {NewRExpr, NewState} ->
+            Forms = apply_after_expressions(NewRExpr, fun(Last) ->
+                                                              [{match, L, NewLValue, Last}]
+                                                      end),
+            expr(Next, NewState, Forms ++ Acc)
+    end;
 
 expr([{lc, _, Expr, _Generator} = Form | Next], State, Acc) ->
     %%
@@ -124,14 +135,9 @@ expr([{'catch', _, Expr} = Form | Next], State, Acc) ->
     expr(Next, State, [Form | Acc]);
 
 expr([{'fun', L, {clauses, Clauses}} | Next], State, Acc) ->
-    %%
-    %% NEED TESTS !!!
-    %%
-    put(debug, true),
     ?DEBUG("fun found, state: ~p\n", [State]),
     {NewClauses, _} = mapfoldl(fun clause/2, State#state{no_support=false}, Clauses),
     ?DEBUG("new clauses ~p\n", [NewClauses]),
-    erase(debug),
     expr(Next, State, [{'fun', L, {clauses, NewClauses}} | Acc]);
 
 expr([{'fun', _, {function, M, F, A}} = Form | Next], State, Acc) ->
@@ -223,40 +229,39 @@ check_no_return(Expressions, State) ->
     expr(Expressions, State#state{return=false,no_support=Expressions}, []).
 
 
-control_clauses(State, Clauses, Next) ->
-    {NewClauses, NewState} = mapfoldl(fun clause/2, State, Clauses),
-    Rs = lists:usort([R || {R, _} <- NewClauses]),
+control_clauses(State, Clauses) ->
+    {NewClauses, _} = mapfoldl(fun clause/2, State, Clauses),
+    {calc_state(State, NewClauses), NewClauses}.
+
+
+calc_state(State, Clauses) ->
+    Rs = lists:usort([R || {R, _} <- Clauses]),
     case lists:usort(Rs) of
         [true] ->
-            {[], NewState, NewClauses};
+            State#state{return=true};
         [false] ->
-            {Next, NewState, NewClauses};
+            State#state{return=false};
         _ ->
-            {After, AfterState} = expr(Next, clean(State), []),
-            AfterClauses = apply_in_clauses(NewClauses, After),
-            {[], combine(NewState#state{return=maybe}, AfterState), AfterClauses}
+            State#state{return=maybe}
     end.
 
-apply_after_expressions(Expressions, []) ->
-    Expressions;
-apply_after_expressions([], After) ->
-    After;
-apply_after_expressions([{'case', L, Expression, Clauses} | Other], After) ->
-    [{'case', L, Expression, apply_in_clauses(Clauses, After)} | Other];
-apply_after_expressions([{'if', L, Clauses} | Other], After) ->
-    [{'if', L, apply_in_clauses(Clauses, After)} | Other];
-apply_after_expressions(Clause, After) ->
-    After ++ Clause.
+
+apply_after_expressions([{'case', L, Expression, Clauses} | Other], AfterFun) ->
+    [{'case', L, Expression, apply_in_clauses(Clauses, AfterFun)} | Other];
+apply_after_expressions([{'if', L, Clauses} | Other], AfterFun) ->
+    [{'if', L, apply_in_clauses(Clauses, AfterFun)} | Other];
+apply_after_expressions([Last | Expressions], AfterFun) ->
+    AfterFun(Last) ++ Expressions.
 
 
-apply_in_clauses([{maybe, {clause, L, Params, Guards, Expressions}} | Next], After) ->
-    NewExpressions = apply_after_expressions(Expressions, After),
-    [{maybe, {clause, L, Params, Guards, NewExpressions}} | apply_in_clauses(Next, After)];
-apply_in_clauses([{false, {clause, L, Params, Guards, Expressions}} | Next], After) ->
-    [{false, {clause, L, Params, Guards, After ++ Expressions}}
-     | apply_in_clauses(Next, After)];
-apply_in_clauses([Clause | Next], After) ->
-    [Clause | apply_in_clauses(Next, After)];
+apply_in_clauses([{maybe, {clause, L, Params, Guards, Expressions}} | Next], AfterFun) ->
+    NewExpressions = apply_after_expressions(Expressions, AfterFun),
+    [{maybe, {clause, L, Params, Guards, NewExpressions}} | apply_in_clauses(Next, AfterFun)];
+apply_in_clauses([{false, {clause, L, Params, Guards, [Last | Expressions]}} | Next], AfterFun) ->
+    [{false, {clause, L, Params, Guards, AfterFun(Last) ++ Expressions}}
+     | apply_in_clauses(Next, AfterFun)];
+apply_in_clauses([Clause | Next], AfterFun) ->
+    [Clause | apply_in_clauses(Next, AfterFun)];
 apply_in_clauses([], _) ->
     [].
 
