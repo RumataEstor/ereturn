@@ -38,8 +38,7 @@
 parse_transform(Forms, _Options) ->
     ?DEBUG("Before: ~p\n", [Forms]),
     try
-        {NewForms, State} = mapfoldl(fun top/2, #state{}, Forms),
-        parse_trans_pp:pp_src(NewForms, State#state.filename ++ ".xfm"),
+        {NewForms, _State} = mapfoldl(fun top/2, #state{}, Forms),
         NewForms
     catch
         throw:{error, _, _} = Reason ->
