@@ -2,11 +2,8 @@
 compile:
 	./rebar compile
 
-clean: clean_test
+clean:
 	./rebar clean
-
-clean_test:
-	rm -f test/*.xfm
 
 dialyzer: compile
 	echo "-*- mode: compilation-minor -*-">dialyzer_result_a

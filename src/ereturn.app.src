@@ -4,5 +4,5 @@
   {vsn, "0.0.1"},
   {registered, []},
   {env, []},
-  {applications, [kernel, stdlib, syntax_tools, parse_trans]}
+  {applications, [kernel, stdlib]}
 ]}.
