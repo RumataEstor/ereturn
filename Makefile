@@ -1,6 +1,7 @@
 
 compile:
 	./rebar compile
+	@if [[ -n "${FILE}" ]]; then erlc -pa ebin -E -DDEBUG -DTEST ${FILE}; fi
 
 clean:
 	./rebar clean

@@ -29,5 +29,6 @@ tests() ->
     [{fun case_no_return/2,
       [{0, [start, 0], {return, 0}},
        {1, [start, "_", 1, finish], {result, 1}},
-       {2, [start, "_", 2, finish], {result, 2}}
+       {2, [start, "_", 2, finish], {result, 2}},
+       {3, [start, "_"], {'EXIT', 'Pid', '_'}}
       ]}].

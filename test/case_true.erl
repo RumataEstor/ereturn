@@ -28,5 +28,6 @@ tests() ->
     [{fun case_full_return/2,
       [{0, [start, 0, finish], {result, 0}},
        {1, [start, "_"], {return, 1}},
-       {2, [start, "_"], {return, 2}}
+       {2, [start, "_"], {return, 2}},
+       {3, [start, "_", "after _", finish], {result, 3}}
       ]}].

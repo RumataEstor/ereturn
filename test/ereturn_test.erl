@@ -5,14 +5,14 @@
 
 return_test_() ->
     {inparallel,
-     [[[?_test(do_test({fun(F) -> TestFun(P, F) end, S, R}))
+     [[[?_test(do_test({fun(F) -> TestFun(P, F) end, S, R}, TestFun))
         || {P, S, R} <- ParamStatesList]
        || {TestFun, ParamStatesList} <- M:tests()]
       || M <- [simple, case_true, case_maybe, case_false, if_maybe, fun_simple, match_simple]]
     }.
 
 
-do_test({TestFun, States, Result}) ->
+do_test({TestFun, States, Result}, TFun) ->
     erlang:process_flag(trap_exit, true),
     Self = self(),
     Pid = spawn_link(fun() ->
@@ -20,9 +20,15 @@ do_test({TestFun, States, Result}) ->
                              R = TestFun(SignalFun),
                              SignalFun(R)
                      end),
+    ?debugFmt("testing ~p pid ~p", [TFun, Pid]),
     expect_states(States ++ [Result], Pid).
 
 
+expect_states([{'EXIT', 'Pid', '_'}], Pid) ->
+    receive
+        {'EXIT', Pid, _} ->
+            ok
+    end;
 expect_states([S | Next], Pid) ->
     receive
         Msg ->
